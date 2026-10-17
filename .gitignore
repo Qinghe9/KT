@@ -1,0 +1,25 @@
+# Datasets and generated atomic-KC data
+data/
+
+# Training outputs, checkpoints, predictions and logs
+runs/
+*.pt
+*.pth
+*.ckpt
+*.log
+*.csv
+*.tsv
+*.json
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local environments and editor files
+.venv/
+venv/
+.env
+.DS_Store
+.idea/
+.vscode/
