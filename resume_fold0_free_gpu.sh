@@ -24,7 +24,7 @@ run_one() {
     --epochs 100 --patience 10 --min-delta 0.001 \
     --scheduler-patience 3 --lr-factor 0.5 --min-lr 0.000001 \
     --batch 1024 --workers 4 --gpu-memory-fraction 0.9 \
-    --dim 32 --context 200 --topk 4 --lr 0.003 --seed 3407 \
+    --dim 32 --context 200 --topk 2 --lr 0.003 --seed 3407 \
     --recall-ks 1 3 5 10 --device cuda:0 --test \
     > "runs/fold0/logs/$dataset.log" 2>&1
   echo "[$(date -Is)] DONE $dataset GPU=1"

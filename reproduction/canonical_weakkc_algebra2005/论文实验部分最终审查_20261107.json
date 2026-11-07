@@ -1,0 +1,28 @@
+{
+  "audit_date": "2026-11-07",
+  "paper": "/home/u202310176043/.codex/attachments/43778577-8b65-4f79-9cf1-01afca9be56d/钟梓欣-毕业设计（论文）正文终审修订稿（图公式符号复核，26.11.06）.docx",
+  "verdict": "FAIL_CURRENT_MANUSCRIPT_RESULTS",
+  "experiment_protocol_valid": true,
+  "algebra_main_protocol_unified": true,
+  "paper_results_ready_for_submission": false,
+  "blocking_issues": [
+    "Tables 5-1 and 5-2 mix single-seed baseline values with two-seed Algebra means while claiming two-seed aggregation.",
+    "The manuscript still reports obsolete Algebra proposed-model metrics and WeakKC candidate count 497 instead of 559.",
+    "Algebra two-stage and ablation results use the old KT/WeakKC candidate sets (51123/497), not the canonical sets (51067/559).",
+    "Six seed-3407 Algebra ablations use batch size 8192 while the controlled setting is 4096.",
+    "Figures 5-1, 5-2, 5-3, 5-4, 6-1 and 6-2 contain or depend on stale Algebra or mixed-seed values."
+  ],
+  "canonical_algebra": {
+    "kt_candidates": 51067,
+    "weakkc_candidates": 559,
+    "auc": 0.8208067361,
+    "acc": 0.8221160436,
+    "rmse": 0.3572137733,
+    "macro_kcauc": 0.7258519349,
+    "weakkc_auc": 0.7322245832,
+    "recall_at_1": 0.22685185,
+    "recall_at_3": 0.58101852,
+    "recall_at_5": 0.72361111,
+    "recall_at_10": 0.925
+  }
+}

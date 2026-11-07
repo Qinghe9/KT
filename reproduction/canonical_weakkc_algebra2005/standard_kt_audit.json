@@ -1,0 +1,106 @@
+{
+  "canonical_candidates": 51067,
+  "files": [
+    {
+      "path": "/home/u202310176043/project/pykt-toolkit/reproduction/formal_weak_baselines_seed2026/algebra2005/weakhead/akt/test_question_predictions.tsv",
+      "candidates": 51067,
+      "keys_and_labels_ok": true
+    },
+    {
+      "path": "/home/u202310176043/project/pykt-toolkit/reproduction/formal_weak_baselines_seed2026/algebra2005/weakhead/dimkt/test_question_predictions.tsv",
+      "candidates": 51067,
+      "keys_and_labels_ok": true
+    },
+    {
+      "path": "/home/u202310176043/project/pykt-toolkit/reproduction/formal_weak_baselines_seed2026/algebra2005/weakhead/dkt+/test_question_predictions.tsv",
+      "candidates": 51067,
+      "keys_and_labels_ok": true
+    },
+    {
+      "path": "/home/u202310176043/project/pykt-toolkit/reproduction/formal_weak_baselines_seed2026/algebra2005/weakhead/dkt/test_question_predictions.tsv",
+      "candidates": 51067,
+      "keys_and_labels_ok": true
+    },
+    {
+      "path": "/home/u202310176043/project/pykt-toolkit/reproduction/formal_weak_baselines_seed2026/algebra2005/weakhead/dkvmn/test_question_predictions.tsv",
+      "candidates": 51067,
+      "keys_and_labels_ok": true
+    },
+    {
+      "path": "/home/u202310176043/project/pykt-toolkit/reproduction/formal_weak_baselines_seed2026/algebra2005/weakhead/dtransformer/test_question_predictions.tsv",
+      "candidates": 51067,
+      "keys_and_labels_ok": true
+    },
+    {
+      "path": "/home/u202310176043/project/pykt-toolkit/reproduction/formal_weak_baselines_seed2026/algebra2005/weakhead/mockt/test_question_predictions.tsv",
+      "candidates": 51067,
+      "keys_and_labels_ok": true
+    },
+    {
+      "path": "/home/u202310176043/project/pykt-toolkit/reproduction/formal_weak_baselines_seed2026/algebra2005/weakhead/saint/test_question_predictions.tsv",
+      "candidates": 51067,
+      "keys_and_labels_ok": true
+    },
+    {
+      "path": "/home/u202310176043/project/pykt-toolkit/reproduction/formal_weak_baselines_seed2026/algebra2005/weakhead/sakt/test_question_predictions.tsv",
+      "candidates": 51067,
+      "keys_and_labels_ok": true
+    },
+    {
+      "path": "/home/u202310176043/project/pykt-toolkit/reproduction/formal_weak_baselines_seed2026/algebra2005/weakhead/simplekt/test_question_predictions.tsv",
+      "candidates": 51067,
+      "keys_and_labels_ok": true
+    },
+    {
+      "path": "/home/u202310176043/project/pykt-toolkit/reproduction/formal_weak_baselines_seed3407/algebra2005/weakhead/akt/test_question_predictions.tsv",
+      "candidates": 51067,
+      "keys_and_labels_ok": true
+    },
+    {
+      "path": "/home/u202310176043/project/pykt-toolkit/reproduction/formal_weak_baselines_seed3407/algebra2005/weakhead/dimkt/test_question_predictions.tsv",
+      "candidates": 51067,
+      "keys_and_labels_ok": true
+    },
+    {
+      "path": "/home/u202310176043/project/pykt-toolkit/reproduction/formal_weak_baselines_seed3407/algebra2005/weakhead/dkt+/test_question_predictions.tsv",
+      "candidates": 51067,
+      "keys_and_labels_ok": true
+    },
+    {
+      "path": "/home/u202310176043/project/pykt-toolkit/reproduction/formal_weak_baselines_seed3407/algebra2005/weakhead/dkt/test_question_predictions.tsv",
+      "candidates": 51067,
+      "keys_and_labels_ok": true
+    },
+    {
+      "path": "/home/u202310176043/project/pykt-toolkit/reproduction/formal_weak_baselines_seed3407/algebra2005/weakhead/dkvmn/test_question_predictions.tsv",
+      "candidates": 51067,
+      "keys_and_labels_ok": true
+    },
+    {
+      "path": "/home/u202310176043/project/pykt-toolkit/reproduction/formal_weak_baselines_seed3407/algebra2005/weakhead/dtransformer/test_question_predictions.tsv",
+      "candidates": 51067,
+      "keys_and_labels_ok": true
+    },
+    {
+      "path": "/home/u202310176043/project/pykt-toolkit/reproduction/formal_weak_baselines_seed3407/algebra2005/weakhead/mockt/test_question_predictions.tsv",
+      "candidates": 51067,
+      "keys_and_labels_ok": true
+    },
+    {
+      "path": "/home/u202310176043/project/pykt-toolkit/reproduction/formal_weak_baselines_seed3407/algebra2005/weakhead/saint/test_question_predictions.tsv",
+      "candidates": 51067,
+      "keys_and_labels_ok": true
+    },
+    {
+      "path": "/home/u202310176043/project/pykt-toolkit/reproduction/formal_weak_baselines_seed3407/algebra2005/weakhead/sakt/test_question_predictions.tsv",
+      "candidates": 51067,
+      "keys_and_labels_ok": true
+    },
+    {
+      "path": "/home/u202310176043/project/pykt-toolkit/reproduction/formal_weak_baselines_seed3407/algebra2005/weakhead/simplekt/test_question_predictions.tsv",
+      "candidates": 51067,
+      "keys_and_labels_ok": true
+    }
+  ],
+  "passed": true
+}

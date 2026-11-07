@@ -29,7 +29,7 @@ run_one() {
     --scheduler-patience 3 --lr-factor 0.5 --min-lr 0.000001 \
     --batch "$BATCH" --workers "$WORKERS" --weak-workers "$WORKERS" \
     --gpu-memory-fraction 0.95 --amp \
-    --dim 32 --context 200 --topk 4 --lr 0.003 \
+    --dim 32 --context 200 --topk 2 --lr 0.003 \
     --seed "$seed" --recall-ks 1 3 5 10 \
     --weak-history-ratio 0.7 --weak-min-history 16 --weak-min-future 10 \
     --weak-positive-threshold 0.6 --weak-negative-threshold 0.4 \

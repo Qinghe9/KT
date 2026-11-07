@@ -1,0 +1,12 @@
+{
+  "protocol": "student-level 8:1:1, fold 0, non-windowed test, atomic KC, seeds 2026 and 3407",
+  "sources": {
+    "/home/u202310176043/.codex/attachments/b9f24fa9-26ea-4e38-b911-1af82b66c5f7/weakhead_results_all.csv": "66466608a91648b8d6a8473d539b065094ea00f232a5099ed739d26c5944e874",
+    "/home/u202310176043/.codex/attachments/b9f24fa9-26ea-4e38-b911-1af82b66c5f7/weakhead_results_all_seed3407.csv": "d9acd0378a0a1b7f45e41fd71ac614bf366413892051af6b67243fffe9db4359",
+    "reproduction/canonical_weakkc_algebra2005/unified_results_mean_std.csv": "453ac33f976130720edec7a2eb5c3ff8248402fb61fb47c1d0ba390ea196b75a"
+  },
+  "outputs": {
+    "full_10_baselines_kt_mean.csv": "a8b93c778dc2d354a6ebab36ea5b14efae46e43007f90392e2e732cb95ff95b5",
+    "full_10_baselines_weakkc_mean.csv": "62505f116f43e5733f406ff65e8c59ff1e93e1342a884ed93e40505291b805e8"
+  }
+}

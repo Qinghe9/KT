@@ -12,9 +12,10 @@ import torch
 from sklearn.metrics import roc_auc_score, accuracy_score, mean_squared_error
 from torch.utils.data import DataLoader
 
-from data import prepare, prepare_fold, PrefixDataset
+from data import prepare, prepare_fold, PrefixDataset, LengthBucketBatchSampler
 from model import SpectralKT
 from weakkc import WeakKCConfig, weak_recall_metrics
+from canonical_weakkc import CanonicalWeakKCDataset
 
 
 def metrics(y,p,c):
@@ -47,7 +48,13 @@ def evaluate(model,loader,device,weak=False,recall_ks=(1,3,5,10)):
         else:
             cc=[[x for x in row if x] for row in b['target_cs'].cpu().tolist()]
         y+=yy; p+=pp; c+=cc; gates.append(g.sum(0).cpu().numpy())
-        rows.extend(dict(uid=u,concepts=k,y=a,p=s) for u,k,a,s in zip(b['uid'],cc,yy,pp))
+        sample_ids=b.get('sample_id',[None]*len(yy))
+        supports=(b['future_support'].cpu().tolist() if 'future_support' in b else [None]*len(yy))
+        errors=(b['future_error_rate'].cpu().tolist() if 'future_error_rate' in b else [None]*len(yy))
+        rows.extend(dict(uid=u,concepts=k,y=a,p=s,sample_id=sample_id,
+                         future_support=support,future_error_rate=error)
+                    for u,k,a,s,sample_id,support,error in
+                    zip(b['uid'],cc,yy,pp,sample_ids,supports,errors))
     if not y: return {"n":0,"AUC":None,**{f"Recall@{k}":None for k in recall_ks}},rows
     result=metrics(y,p,c); result['expert_weights']=(np.sum(gates,axis=0)/len(y)).tolist()
     if weak:
@@ -81,6 +88,8 @@ def main():
     parser.add_argument('--weak-min-future',type=int,default=10)
     parser.add_argument('--weak-positive-threshold',type=float,default=.6)
     parser.add_argument('--weak-negative-threshold',type=float,default=.4)
+    parser.add_argument('--canonical-weakkc',default=None,
+                        help='immutable canonical WeakKC manifest directory')
     parser.add_argument('--lambda-weak',type=float,default=.2)
     parser.add_argument('--lambda-balance',type=float,default=.01)
     parser.add_argument('--weak-update-every',type=int,default=4)
@@ -89,6 +98,8 @@ def main():
     parser.add_argument('--workers',type=int,default=4)
     parser.add_argument('--weak-workers',type=int,default=None,
                         help='workers for sparse diagnostic loader; defaults to --workers')
+    parser.add_argument('--bucket-by-length',action='store_true',
+                        help='group equal valid-prefix lengths per batch; faster on large datasets')
     parser.add_argument('--gpu-memory-fraction',type=float,default=.9)
     parser.add_argument('--dim',type=int,default=32)
     parser.add_argument('--topk',type=int,default=2,choices=[1,2,3,4])
@@ -120,14 +131,21 @@ def main():
                      'no_history_skip','no_spectrum','topk','recall_ks','weak_history_ratio',
                      'weak_min_history','weak_min_future','weak_positive_threshold',
                      'weak_negative_threshold','lambda_weak','lambda_balance','weak_update_every',
-                     'no_kc_conditioning','uniform_fusion','disable_expert','training_mode']:
+                     'no_kc_conditioning','uniform_fusion','disable_expert','training_mode',
+                     'bucket_by_length','canonical_weakkc']:
             if name in saved:
                 setattr(args,name,saved[name])
         # Backward compatibility with runs created before multi-K reporting.
         if 'recall_ks' not in saved:
             args.recall_ks=[saved.get('recall_k',3)]
         args.item_prior=saved.get('item_prior',False)
-    logging.basicConfig(level=logging.INFO,format='%(asctime)s %(message)s',handlers=[logging.FileHandler(out/'train.log'),logging.StreamHandler()])
+    # Stage launchers already redirect stdout/stderr to a dedicated log file.
+    # Keeping a second long-lived FileHandler on the network filesystem can
+    # produce ESTALE after a mount reconnect and flood otherwise healthy runs
+    # with "Stale file handle" logging errors.  Log to stdout only; the
+    # per-stage launcher log remains the durable record.
+    logging.basicConfig(level=logging.INFO,format='%(asctime)s %(message)s',
+                        handlers=[logging.StreamHandler()])
     random.seed(args.seed);np.random.seed(args.seed);torch.manual_seed(args.seed);torch.set_num_threads(2)
     if args.device.startswith('cuda'):
         torch.cuda.set_per_process_memory_fraction(args.gpu_memory_fraction,device=args.device)
@@ -146,14 +164,44 @@ def main():
                              args.weak_positive_threshold,args.weak_negative_threshold,
                              tuple(sorted(set(args.recall_ks)))).validate()
     sets={s:PrefixDataset(students,s,args.context) for s in ['train','valid','test']}
-    weaksets={s:PrefixDataset(students,s,args.context,weak=True,weak_config=weak_config) for s in sets}
+    if args.canonical_weakkc:
+        weaksets={s:CanonicalWeakKCDataset(args.canonical_weakkc,s,args.context,meta['num_c'])
+                  for s in sets}
+        canonical_manifest=weaksets['test'].manifest
+        expected={s:canonical_manifest['split_counts'][s] for s in sets}
+        actual={s:len(weaksets[s]) for s in sets}
+        if actual != expected:
+            raise ValueError(f'canonical WeakKC count mismatch: actual={actual} expected={expected}')
+        logging.info('canonical WeakKC protocol_hash=%s counts=%s',
+                     canonical_manifest['protocol_hash'],actual)
+    else:
+        canonical_manifest=None
+        weaksets={s:PrefixDataset(students,s,args.context,weak=True,weak_config=weak_config) for s in sets}
     loader_args=dict(batch_size=args.batch,num_workers=args.workers,
                      pin_memory=args.device.startswith('cuda'),persistent_workers=args.workers>0)
     weak_workers=args.workers if args.weak_workers is None else args.weak_workers
     weak_loader_args=dict(batch_size=args.batch,num_workers=weak_workers,
                           pin_memory=args.device.startswith('cuda'),persistent_workers=weak_workers>0)
-    loaders={s:DataLoader(ds,shuffle=s=='train',**loader_args) for s,ds in sets.items()}
-    weakloaders={s:DataLoader(ds,shuffle=s=='train' and len(ds)>0,**weak_loader_args) for s,ds in weaksets.items()}
+    if args.bucket_by_length:
+        # Only training loaders benefit enough from subprocess prefetching to
+        # justify keeping workers alive.  Forking persistent workers for every
+        # Junyi validation/test loader duplicates a very large Python object
+        # graph and can make the OS kill a training process at epoch-end.
+        loaders={}
+        weakloaders={}
+        for s,ds in sets.items():
+            nw=args.workers if s=='train' else 0
+            loaders[s]=DataLoader(ds,batch_sampler=LengthBucketBatchSampler(
+                ds,args.batch,shuffle=s=='train',seed=args.seed),num_workers=nw,
+                pin_memory=args.device.startswith('cuda'),persistent_workers=nw>0)
+        for s,ds in weaksets.items():
+            nw=weak_workers if s=='train' else 0
+            weakloaders[s]=DataLoader(ds,batch_sampler=LengthBucketBatchSampler(
+                ds,args.batch,shuffle=s=='train' and len(ds)>0,seed=args.seed+17),
+                num_workers=nw,pin_memory=args.device.startswith('cuda'),persistent_workers=nw>0)
+    else:
+        loaders={s:DataLoader(ds,shuffle=s=='train',**loader_args) for s,ds in sets.items()}
+        weakloaders={s:DataLoader(ds,shuffle=s=='train' and len(ds)>0,**weak_loader_args) for s,ds in weaksets.items()}
     logging.info('KT examples %s; diagnostic pairs %s', {s:len(d) for s,d in sets.items()},{s:len(d) for s,d in weaksets.items()})
     model=SpectralKT(meta['num_q'],meta['num_c'],args.context,args.dim,topk=args.topk,
                      history_skip=not args.no_history_skip,spectral=not args.no_spectrum,
@@ -215,6 +263,9 @@ def main():
                      args.resume_from,start_epoch,best_epoch,best,amp_enabled)
     if not args.evaluate_only:
         for epoch in range(start_epoch,args.epochs+1):
+            for loader in (loaders['train'],weakloaders['train']):
+                if hasattr(loader.batch_sampler,'set_epoch'):
+                    loader.batch_sampler.set_epoch(epoch)
             model.train(); losses=[]; weakiter=iter(weakloaders['train'])
             epoch_loader=weakloaders['train'] if args.training_mode=='weak_head' else loaders['train']
             for step,b in enumerate(epoch_loader):
@@ -261,7 +312,8 @@ def main():
                 logging.info('early_stop epoch=%s best_epoch=%s best_auc=%.8f',epoch,best_epoch,best)
                 break
     model.load_state_dict(torch.load(out/'best.pt',map_location=args.device,weights_only=True))
-    result=dict(protocol={**meta,'weakkc':weak_config.to_dict()},context=args.context,max_epochs=args.epochs,
+    result=dict(protocol={**meta,'weakkc':weak_config.to_dict(),
+                          'canonical_weakkc':canonical_manifest},context=args.context,max_epochs=args.epochs,
                 epochs_trained=len(history) if history else None,best_epoch=best_epoch or None,
                 test_evaluated=args.test)
     for split in ['valid']+(['test'] if args.test else []):
@@ -269,7 +321,8 @@ def main():
         result['weak_'+split],weakrows=evaluate(model,weakloaders[split],args.device,True,weak_config.recall_ks)
         for name,records in [(split,rows),('weak_'+split,weakrows)]:
             with (out/f'{name}_predictions.csv').open('w') as f:
-                writer=csv.DictWriter(f,fieldnames=['uid','concepts','y','p']);writer.writeheader();writer.writerows(records)
+                fields=['sample_id','uid','concepts','y','p','future_support','future_error_rate']
+                writer=csv.DictWriter(f,fieldnames=fields);writer.writeheader();writer.writerows(records)
     (out/'metrics.json').write_text(json.dumps(result,indent=2))
     with (out/'results.csv').open('w') as f:
         recall_fields=[f'Recall@{k}' for k in weak_config.recall_ks]

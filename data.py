@@ -2,11 +2,12 @@
 import csv
 import hashlib
 import json
+from array import array
 from pathlib import Path
 
 import numpy as np
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, Sampler
 from weakkc import WeakKCConfig, weak_kc_examples
 
 
@@ -109,10 +110,24 @@ def prepare_fold(train_valid_source, test_source, destination, fold=0, users=0, 
         with path.open() as f:
             for row in csv.DictReader(f):
                 if row['uid'] not in allowed: continue
-                q=[int(x)+1 for x in row['questions'].split(',')]
-                c=[sorted(set(map(int,x.split('_')))) for x in row['concepts'].split(',')]
-                r=[int(x) for x in row['responses'].split(',')]
-                if row.get('timestamps'): t=[int(x) for x in row['timestamps'].split(',')]
+                q_raw=row['questions'].split(',')
+                c_raw=row['concepts'].split(',')
+                r_raw=row['responses'].split(',')
+                t_raw=row['timestamps'].split(',') if row.get('timestamps') else None
+                mask_raw=row.get('selectmasks','').split(',') if row.get('selectmasks') else None
+                lengths={len(q_raw),len(c_raw),len(r_raw)}
+                if t_raw is not None: lengths.add(len(t_raw))
+                if mask_raw is not None: lengths.add(len(mask_raw))
+                if len(lengths)!=1:
+                    raise ValueError(f'inconsistent sequence columns for uid={row["uid"]}: {lengths}')
+                # pyKT pads the final chunk with -1 and marks those positions in
+                # selectmasks.  Padding is storage, not an interaction or label.
+                valid=[i for i,value in enumerate(r_raw)
+                       if value in ('0','1') and (mask_raw is None or mask_raw[i]=='1')]
+                q=[int(q_raw[i])+1 for i in valid]
+                c=[sorted(set(map(int,c_raw[i].split('_')))) for i in valid]
+                r=[int(r_raw[i]) for i in valid]
+                if t_raw is not None: t=[int(t_raw[i]) for i in valid]
                 else: t=list(range(len(r)))
                 if cap>0: q,c,r,t=q[:cap],c[:cap],r[:cap],t[:cap]
                 if not q: continue
@@ -129,10 +144,12 @@ def prepare_fold(train_valid_source, test_source, destination, fold=0, users=0, 
         nq=max(nq,max(s['q'])); s['c']=[[concept_vocab[x] for x in cs] for cs in s['c']]
     destination.mkdir(parents=True,exist_ok=True)
     with (destination/'students.json').open('w') as f: json.dump(raw,f)
-    counts={split:sum(s['split']==split for s in raw) for split in chosen}
+    sequence_counts={split:sum(s['split']==split for s in raw) for split in chosen}
+    student_counts={split:len({s['uid'] for s in raw if s['split']==split}) for split in chosen}
     meta=dict(train_valid_source=str(train_valid_source.resolve()),test_source=str(test_source.resolve()),
               train_valid_sha256=file_sha256(train_valid_source),test_sha256=file_sha256(test_source),
-              fold=fold,users=len(raw),split_counts=counts,seed=seed,cap=cap,
+              fold=fold,users=sum(student_counts.values()),split_counts=student_counts,
+              sequence_counts=sequence_counts,seed=seed,cap=cap,
               num_q=nq+1,num_c=len(concept_vocab)+1,
               max_concepts=max(len(cs) for s in raw for cs in s['c']),
               split='pyKT one-fold: folds!=selected train, selected fold valid, external test',
@@ -190,3 +207,51 @@ class PrefixDataset(Dataset):
                     target_c=torch.tensor(tc), y=torch.tensor(y,dtype=torch.float32),
                     target_cs=torch.tensor(target_cs+[0]*(self.max_concepts-len(target_cs))),
                     features=torch.tensor(features,dtype=torch.float32), uid=s['uid'])
+
+
+class LengthBucketBatchSampler(Sampler):
+    """Shuffle whole batches while keeping equal-length prefixes together.
+
+    SpectralKT intentionally computes the FFT only over the valid history.  A
+    fully shuffled Junyi batch usually contains every length from 1 to 199,
+    forcing almost 200 tiny FFT/Mamba dispatch groups per optimizer step.  This
+    sampler changes ordering only: every example is still seen exactly once per
+    epoch, but a batch normally has one effective length.  Batch descriptors
+    rather than all example indices are shuffled, keeping memory overhead small
+    for Junyi's roughly 20 million training prefixes.
+    """
+    def __init__(self, dataset, batch_size, shuffle=True, drop_last=False, seed=0):
+        self.dataset=dataset
+        self.batch_size=int(batch_size)
+        self.shuffle=bool(shuffle)
+        self.drop_last=bool(drop_last)
+        self.seed=int(seed)
+        self.epoch=0
+        buckets={}
+        for index,item in enumerate(dataset.items):
+            # item=(student_index, target_time, target_q, target_c, response)
+            t=item[1]
+            length=min(t,dataset.context) if dataset.weak else t%dataset.context
+            buckets.setdefault(length,array('I')).append(index)
+        self.buckets=buckets
+        self.descriptors=[]
+        for length,indices in buckets.items():
+            stop=len(indices) if not drop_last else len(indices)-(len(indices)%self.batch_size)
+            for start in range(0,stop,self.batch_size):
+                self.descriptors.append((length,start,min(start+self.batch_size,len(indices))))
+
+    def __len__(self):
+        return len(self.descriptors)
+
+    def set_epoch(self,epoch):
+        self.epoch=int(epoch)
+
+    def __iter__(self):
+        order=list(range(len(self.descriptors)))
+        if self.shuffle:
+            rng=np.random.default_rng(self.seed+self.epoch)
+            rng.shuffle(order)
+        for position in order:
+            length,start,end=self.descriptors[position]
+            indices=self.buckets[length]
+            yield indices[start:end]
