@@ -65,7 +65,8 @@ def evaluate(model,loader,device,weak=False,recall_ks=(1,3,5,10)):
 
 def main():
     parser=argparse.ArgumentParser()
-    parser.add_argument('--source',default='/home/u202310176043/project/pykt-toolkit/data/junyi2015/train_valid_quelevel.csv')
+    parser.add_argument('--source',default=None,
+                        help='source question-level CSV; required only with --prepare')
     parser.add_argument('--test-source',default=None)
     parser.add_argument('--fold',type=int,default=0)
     parser.add_argument('--fold-data',action='store_true')
@@ -150,6 +151,8 @@ def main():
     if args.device.startswith('cuda'):
         torch.cuda.set_per_process_memory_fraction(args.gpu_memory_fraction,device=args.device)
     if args.prepare:
+        if not args.source:
+            parser.error('--prepare requires --source')
         if args.fold_data:
             if not args.test_source: parser.error('--fold-data requires --test-source')
             prepare_fold(args.source,args.test_source,args.data,args.fold,args.users,args.seed,args.cap)

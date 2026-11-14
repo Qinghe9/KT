@@ -11,6 +11,13 @@ runs/
 *.tsv
 *.json
 
+# Curated, versioned experiment artifacts
+!results/
+!results/**/*.csv
+!reproduction/**/*.csv
+!reproduction/**/*.json
+!integrations/**/*.json
+
 # Python artifacts
 __pycache__/
 *.py[cod]

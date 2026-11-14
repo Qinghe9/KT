@@ -1,62 +1,114 @@
-# 知识点条件化频谱专家知识追踪原型
+# SpectralMoE-KT
 
-按《思路.md》核心算法实现，真实小数据集使用本机 Junyi2015。所有训练实验固定 **2 epoch**，目标指标是下一题预测 AUC。是否达到 0.9 以实际保留测试集结果为准，不能保证达到指定分数。
+> 基于频谱混合专家的知识追踪与薄弱知识点诊断方法<br>
+> Knowledge tracing and weak knowledge component diagnosis with spectral mixture-of-experts
 
-## 运行
+[![Python](https://img.shields.io/badge/Python-3.10-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.6-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
+[![Mamba](https://img.shields.io/badge/Mamba--SSM-2.2.4-6A5ACD)](https://github.com/state-spaces/mamba)
+[![Protocol](https://img.shields.io/badge/Protocol-student--level%208%3A1%3A1-2E8B57)](docs/EXPERIMENT_GUIDE.md)
+
+SpectralMoE-KT 面向两项相关任务：根据严格历史前缀预测下一次作答正确率，以及估计学生未来在原子知识点上的薄弱风险。模型将目标知识点条件化、可学习复数频谱滤波和异构专家路由组合在同一框架中，并在五个公开数据集上采用统一的学生集合划分和双随机种子协议进行评估。
+
+<p align="center">
+  <img src="docs/assets/architecture.png" width="94%" alt="SpectralMoE-KT architecture">
+</p>
+
+## 核心设计
+
+- **原子 KC 表示**：多知识点题目采用掩码平均嵌入，不把知识点集合编码成新的类别。
+- **目标 KC 条件化**：同一学生针对不同目标知识点生成差异化历史状态。
+- **专家专属频谱滤波**：在严格历史前缀上执行 RFFT，并用四组可学习复数滤波器生成专家输入。
+- **异构专家池**：Attention、GRU、CNN 与官方 `mamba_ssm.Mamba` 提供互补的序列表示。
+- **Top-2 稀疏路由**：结合历史池化、频谱统计和目标 KC 嵌入动态融合两个专家。
+- **双任务输出**：同时支持下一题预测和 WeakKC 薄弱知识点风险排序，并提供联合训练与两阶段训练。
+
+## 实验概览
+
+实验覆盖 ASSISTments 2009/2012/2017、EdNet 和 Algebra I 2005–2006。所有正式结果使用学生互斥的约 8:1:1 划分、fold 0、非滑动测试、随机种子 3407/2026，并报告两次运行的算术均值。
+
+| 数据集 | AUC | ACC | RMSE ↓ | Macro-KCAUC |
+|---|---:|---:|---:|---:|
+| ASSISTments 2009 | 0.7778 | 0.7355 | 0.4225 | 0.6896 |
+| ASSISTments 2012 | 0.7730 | 0.7542 | 0.4096 | 0.7440 |
+| ASSISTments 2017 | 0.7821 | 0.7268 | 0.4242 | 0.7383 |
+| EdNet | **0.7309** | **0.7033** | **0.4410** | **0.7097** |
+| Algebra I 2005–2006 | 0.8208 | 0.8221 | 0.3572 | 0.7259 |
+
+<p align="center">
+  <img src="docs/assets/fig5-1-kt-results.png" width="92%" alt="KT results">
+</p>
+
+两阶段训练保持第一阶段的 KT 表示并单独优化诊断头，在五个数据集上均提高了 WeakKC-AUC。完整数值、Recall@K、消融与路由结果见 [实验结果汇总](RESULTS.md) 和 [`results/tables/`](results/tables/)。
+
+<p align="center">
+  <img src="docs/assets/fig5-4-training-modes.png" width="88%" alt="Joint versus two-stage training">
+</p>
+
+## 快速开始
 
 ```bash
-cd /home/u202310176043/project/demo
-conda activate pykt
-python -m unittest test_integrity -v
-python -u train.py --prepare --users 1600 --epochs 2 --out runs/full_v1
+git clone https://github.com/Qinghe9/KT.git
+cd KT
+
+conda create -n spectralmoe python=3.10 -y
+conda activate spectralmoe
+pip install -r requirements.txt
+
+# 数据完整性与因果约束测试
+python -m unittest discover -s tests -v
+
+# 单数据集训练示例；data/atomic_fold0/assist2009 需先按指南生成
+python train.py \
+  --fold-data --fold 0 \
+  --data data/atomic_fold0/assist2009 \
+  --out runs/quickstart/assist2009 \
+  --epochs 100 --patience 10 --min-delta 0.001 \
+  --scheduler-patience 3 --lr-factor 0.5 --min-lr 1e-6 \
+  --batch 2048 --workers 2 --amp \
+  --dim 32 --context 200 --topk 2 --lr 0.003 --seed 3407 \
+  --lambda-weak 0.2 --lambda-balance 0.01 \
+  --weak-history-ratio 0.7 --weak-min-history 16 --weak-min-future 10 \
+  --weak-positive-threshold 0.6 --weak-negative-threshold 0.4 \
+  --device cuda:0 --test
 ```
 
-该命令按用户 ID 的 SHA256 排序选择1600名用户，再按用户划分80%训练、10%验证、10%测试。采样不根据标签筛选难易；来源为 Junyi 原始题目级 `train_valid_quelevel.csv`，旧 pyKT 的 fold 不参与新划分。每人仅保留前200次记录，因此是开发用子集，**不可直接与之前全量 pyKT 基线成绩比较**。源文件只读。
+从原始数据准备、双 GPU 正式训练、两阶段训练、消融实验到结果核验的完整命令见 **[实验复现指南](docs/EXPERIMENT_GUIDE.md)**。
 
-每32次交互形成一个非重叠块；块内每个目标只评一次，输入是该目标的严格历史前缀，块首不评测。没有生成滑动窗口测试文件。知识诊断在每人70%时点做一次，使用最近至多32次已发生交互，未来30%定义标签。训练/验证/测试学生完全隔离。
+## 仓库结构
 
-各实验共享同一 `data/junyi_small`；只在首次准备时加 `--prepare`。`--no-spectrum` 和 `--no-history-skip` 提供消融入口。参数选择只看验证集；确定方案后对已有最佳检查点评一次测试：
-
-```bash
-python -u train.py --out runs/full_v1 --epochs 2 --evaluate-only --test
+```text
+KT/
+├── model.py                 # SpectralMoE-KT、四类专家与路由器
+├── train.py                 # 训练、验证、早停、测试与预测导出
+├── data.py                  # 学生序列、原子 KC 与严格历史前缀
+├── weakkc.py                # WeakKC 标签、诊断头与 Recall@K
+├── canonical_*.py           # 统一评估数据集与协议
+├── diagnose.py              # 单学生薄弱知识点诊断入口
+├── docs/
+│   ├── EXPERIMENT_GUIDE.md  # 端到端复现实验指南
+│   └── assets/              # 架构图和论文实验图
+├── results/tables/          # 当前论文使用的权威结果表
+├── scripts/
+│   ├── experiments/         # 可移植的正式实验入口
+│   └── analysis/            # 汇总、审计与导出工具
+├── tests/                   # 因果性、路由和结构完整性测试
+└── reproduction/            # 统一评估审计与归档结果
 ```
 
-复评会自动读取该实验 `config.json` 的结构与数据参数。每个目录有独立日志、最佳权重、两轮验证历史、预测CSV和结果JSON/CSV。
+## 结果与数据约定
 
-## 实现与原方案调整
+- `data/`、`runs/`、模型权重、逐交互预测和日志不提交 Git；它们由复现指南在本地生成。
+- `results/tables/` 是 README 与论文图表的权威汇总源，不应手工改写数值。
+- WeakKC 标签由诊断时点之后的同一 KC 作答统计生成；未来记录只生成监督标签，不进入历史编码。
+- Recall@K 是学生候选 KC 集合上的宏平均风险召回，不等价于题库推荐 Recall@K。
 
-1. **严格历史FFT**：不能对包含待预测答案的整块序列FFT后再加注意力掩码；FFT已经混合未来，后加mask无法补救。本实现每个样本只输入严格前缀。有效长度分组FFT，先去均值，padding不参与频谱；残差保留水平信息。复数滤波器在固定频率网格学习，插值到各有效长度。
-2. **真实作答单位**：使用Junyi单知识点数据，避免多知识点展开将同一道题相同答案当作“下一次作答”。以后扩展EdNet必须按原始题目聚合知识点，不能沿用展开序列取得高AUC。
-3. **专家池统一**：采用核心算法的Attention/GRU/MLP/选择性状态空间。文档前面提到LSTM、后面提出删除LSTM消融，与核心专家池不一致。本实现不包含LSTM，该消融不能直接套用。
-4. **SSM准确命名**：第四路是纯PyTorch的输入依赖对角状态空间（Mamba-inspired），有可学习步长、衰减与输入/输出门；没有官方Mamba的完整结构、卷积和融合kernel。论文不能把本实现直接记为标准Mamba。
-5. **Top-2稀疏计算**：先路由，仅把被选中的样本送入对应编码器；频谱滤波仍对四路计算。负载均衡用截断前softmax均值，给未选中路由分数保留梯度。记录专家权重以监测坍塌。
-6. **历史统计残差优化**：增加全局/目标知识点/目标题目历史正确率、次数、最近答案和近期正确率。只用当前严格前缀，未见目标使用平滑先验。可关闭消融，不能把此分支收益全部归因于频谱模块。
-7. **弱标签**：历史至少16次、同知识点未来至少10次；错误率>=60%为弱、<=40%为非弱，中间不监督。未来仅用于标签。标签协议集中在`weakkc.py`，辅助损失权重、更新频率和所有阈值均写入配置及结果元数据。
-8. **统一诊断头与指标**：自研模型和适配基线采用相同的`state projection + KC embedding + MLP`结构，但各自独立训练参数。Macro-KCAUC只统计有正负样本的知识点并报告数量；WeakKC同时报告Recall@1/3/5/10，并记录有效学生数和平均候选数。Recall仅在未来有足够支持且被阈值明确标注的候选知识点中计算，并不是全知识点召回率。
-9. **训练题目先验优化**：`--item-prior`用训练学生的题目正确率做30次全局均值平滑，初始化可学习题目logit偏置。验证/测试学生的回答不参与。它作为短训练初始化对照，不是频谱模块的一部分。
+## 文档
 
-## 诊断接口与实验汇总
+- [完整实验指南](docs/EXPERIMENT_GUIDE.md)
+- [结果说明](RESULTS.md)
+- [Algebra 统一实验协议](reproduction/canonical_weakkc_algebra2005/实验协议说明.md)
 
-`diagnose.py --run runs/full_v1 --student-uid <ID> --at 50` 在50次已观察交互之后对历史出现的知识点输出未来薄弱风险、支持次数和专家权重；代码先物理截断未来。该风险不能写成`1-risk=真实掌握度`。
+## 引用
 
-`python finalize.py runs/full_v1 runs/full_v2 runs/full_prior runs/no_spectrum runs/no_history`按验证集选择完整频谱模型，再评估保留测试集，输出`RESULTS.md`、比较CSV、选择依据JSON及同维度频谱消融的学生级配对bootstrap区间。每个候选训练均为2轮。测试只作为最终报告，不能再用其结果挑参数。
-
-复现五组训练时，先准备一次数据，再分别执行（避免覆盖已有结果，使用新目录）：
-
-```bash
-python -u train.py --epochs 2 --out runs/repeat_full
-python -u train.py --epochs 2 --dim 64 --lr 0.0015 --out runs/repeat_dim64
-python -u train.py --epochs 2 --item-prior --lr 0.0015 --out runs/repeat_prior
-python -u train.py --epochs 2 --no-spectrum --out runs/repeat_no_spectrum
-python -u train.py --epochs 2 --no-history-skip --out runs/repeat_no_history
-```
-
-## 限制
-
-- 两轮是快速原型实验，不是收敛训练或论文最终对比。
-- 频率是按交互顺序计算的隐向量频率，并非按真实时间等间隔采样的学习周期；不能直接作生理或认知周期解释。
-- 只报告可复现指标；若未达到0.9，不通过更换测试用户、当前答案特征或未来频谱制造高分。
-- 当前未来薄弱标签的样本数有限；正式论文需扩大固定用户样本，增加置信区间和学生级多次划分。
-- `--users 0 --cap 0 --fold-data`才是正式全量单折设置；任何用户抽样或序列截断运行只能用于调试。
-- 随机种子可通过`--seed`修改；五折正式交叉验证尚未实现，当前只有固定8:1:1。
-- 图形与Visio部分不是本次核心算法编码范围，未生成架构图。
+若本项目对你的研究有帮助，请在正式论文发布后使用论文给出的 BibTeX。在此之前，可引用本仓库并注明固定 Git commit，以保证代码版本可追溯。

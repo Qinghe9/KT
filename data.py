@@ -1,4 +1,4 @@
-"""Student-disjoint Junyi prototype; prefixes never contain their target answer."""
+"""Leakage-safe student sequence preparation for the formal KT experiments."""
 import csv
 import hashlib
 import json
@@ -21,9 +21,8 @@ def file_sha256(path):
 def prepare(source, destination, users=1600, seed=1024, cap=200):
     """Deterministic student sample from a pyKT question-level sequence CSV.
 
-    A multi-concept question remains one interaction.  Its sorted concept-set token
-    is mapped to one dense ID, avoiding the answer duplication caused by pyKT's
-    concept-expanded sequence file.
+    A multi-concept question remains one interaction.  Every atomic KC receives a
+    dense ID and the model pools its KC embeddings without duplicating answers.
     """
     source, destination = Path(source), Path(destination)
     csv.field_size_limit(100_000_000)
